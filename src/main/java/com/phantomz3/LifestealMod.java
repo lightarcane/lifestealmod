@@ -56,6 +56,7 @@ public class LifestealMod implements ModInitializer {
 		// registerReviveCommand();
 		recipeViewRecipeCommand();
 		registerOpReviveCommand();
+		ModItems.registerModItems();
 	}
 
 	private void registerConfig() {
@@ -88,12 +89,12 @@ public class LifestealMod implements ModInitializer {
 								Text.literal("You gained an additional heart!").formatted(Formatting.GRAY),
 								true);
 					} else {
-						ItemStack heartStack = createCustomNetherStar("Heart");
+						ItemStack heartStack = createHeartItem("Heart");
 						player.dropItem(heartStack, true);
 					}
 
 				} else if (!(attacker instanceof PlayerEntity)) {
-					ItemStack heartStack = createCustomNetherStar("Heart");
+					ItemStack heartStack = createHeartItem("Heart");
 					player.dropItem(heartStack, true);
 				}
 
@@ -399,6 +400,13 @@ public class LifestealMod implements ModInitializer {
 //		heartStack.set(DataComponentTypes.LORE, loreComponent);
 		return heartStack;
 	}
+	
+	private ItemStack createHeartItem(String name) {
+		ItemStack heartStack = new ItemStack(ModItems.HEART);
+		heartStack.set(DataComponentTypes.ITEM_NAME, Text.literal(name));
+		heartStack.set(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, false);
+		return heartStack;
+	}
 
 	private ItemStack createReviveBeacon(String name) {
 		ItemStack reviveBeaconStack = new ItemStack(Items.BEACON);
@@ -454,7 +462,7 @@ public class LifestealMod implements ModInitializer {
 												}
 											}
 
-											ItemStack heartStack = createCustomNetherStar("Heart");
+											ItemStack heartStack = createHeartItem("Heart");
 											heartStack.setCount(amount);
 											player.giveItemStack(heartStack);
 
@@ -656,7 +664,7 @@ public class LifestealMod implements ModInitializer {
 			ItemStack reviveBeacon = createReviveBeacon("Revive Beacon");
 	
 			// Custom item for the result of each recipe
-			ItemStack heart = createCustomNetherStar("Heart");
+			ItemStack heart = createHeartItem("Heart");
 	
 			// Recipe 1 pattern
 			String[] recipePattern1 = new String[]{"RNR", "NGN", "RNR"};
