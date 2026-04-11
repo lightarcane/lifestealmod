@@ -279,8 +279,7 @@ public class LifestealMod implements ModInitializer {
 		UseItemCallback.EVENT.register((player, world, hand) -> {
 			ItemStack itemStack = player.getStackInHand(hand);
 
-			if (itemStack.getItem() == Items.NETHER_STAR && !(itemStack.hasGlint())
-					&& itemStack.getName().getString().equals("Heart")) {
+			if (itemStack.getItem() == ModItems.HEART) {
 
 				if (player instanceof ServerPlayerEntity) {
 					// health cap
