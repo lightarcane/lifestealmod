@@ -54,7 +54,6 @@ public class LifestealMod implements ModInitializer {
 		registerEvents();
 		registerCommands();
 		// registerReviveCommand();
-		recipeViewRecipeCommand();
 		registerOpReviveCommand();
 		ModItems.registerModItems();
 	}
@@ -391,30 +390,11 @@ public class LifestealMod implements ModInitializer {
 		});
 	}
 
-	private ItemStack createCustomNetherStar(String name) {
-		ItemStack heartStack = new ItemStack(Items.NETHER_STAR);
-		heartStack.set(DataComponentTypes.ITEM_NAME, Text.literal(name));
-		heartStack.set(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, false);
-//		LoreComponent loreComponent = new LoreComponent(List.of(Text.literal("Right click to consume")));
-//		heartStack.set(DataComponentTypes.LORE, loreComponent);
-		return heartStack;
-	}
-	
 	private ItemStack createHeartItem(String name) {
 		ItemStack heartStack = new ItemStack(ModItems.HEART);
 		heartStack.set(DataComponentTypes.ITEM_NAME, Text.literal(name));
 		heartStack.set(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, false);
 		return heartStack;
-	}
-
-	private ItemStack createReviveBeacon(String name) {
-		ItemStack reviveBeaconStack = new ItemStack(Items.BEACON);
-		reviveBeaconStack.set(DataComponentTypes.ITEM_NAME, Text.literal(name));
-		reviveBeaconStack.set(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, true);
-//		LoreComponent loreComponent = new LoreComponent(List.of(Text.literal("Right click to open revive GUI")));
-//		reviveBeaconStack.set(DataComponentTypes.LORE, loreComponent);
-
-		return reviveBeaconStack;
 	}
 
 	private void increasePlayerHealth(PlayerEntity player) {
@@ -627,134 +607,4 @@ public class LifestealMod implements ModInitializer {
 		return 1;
 	}
 
-	public void recipeViewRecipeCommand() {
-		// Registering /lifesteal viewRecipe to open the RecipeScreenHandler
-		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-			dispatcher.register(CommandManager.literal("lifesteal")
-					.then(CommandManager.literal("viewRecipes")
-							.executes(context -> {
-								ServerPlayerEntity player = context.getSource().getPlayer();
-								openRecipeGUI(player);
-								return 1;
-							})));
-		});
-	}
-
-	public void openRecipeGUI(ServerPlayerEntity player) {
-		if (player instanceof ServerPlayerEntity) {
-			ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
-	
-			// Create a 45-slot chest inventory
-			SimpleInventory inventory = new SimpleInventory(45);
-	
-			// Define items for Recipe 1 and Recipe 2
-			ItemStack rawGoldBlock = new ItemStack(Items.RAW_GOLD_BLOCK);
-			rawGoldBlock.set(DataComponentTypes.ITEM_NAME, Text.literal("Raw Gold Block"));
-	
-			ItemStack netheriteIngot = new ItemStack(Items.NETHERITE_INGOT);
-			netheriteIngot.set(DataComponentTypes.ITEM_NAME, Text.literal("Netherite Ingot"));
-	
-			ItemStack netherStar = new ItemStack(Items.NETHER_STAR);
-			netherStar.set(DataComponentTypes.ITEM_NAME, Text.literal("Nether Star"));
-
-			ItemStack beacon = new ItemStack(Items.BEACON);
-			beacon.set(DataComponentTypes.ITEM_NAME, Text.literal("Beacon"));
-
-			ItemStack reviveBeacon = createReviveBeacon("Revive Beacon");
-	
-			// Custom item for the result of each recipe
-			ItemStack heart = createHeartItem("Heart");
-	
-			// Recipe 1 pattern
-			String[] recipePattern1 = new String[]{"RNR", "NGN", "RNR"};
-	
-			// Recipe 2 pattern
-			String[] recipePattern2 = new String[]{"NGN", "GBG", "NGN"};
-	
-			// Define the starting row and column for Recipe 1 (left side)
-			int startRow1 = 1;
-			int startCol1 = 0;
-	
-			// Define the starting row and column for Recipe 2 (right side)
-			int startRow2 = 1;
-			int startCol2 = 5;
-	
-			// Place Recipe 1 items in the left 3x3 grid
-			for (int i = 0; i < recipePattern1.length; i++) {
-				String row = recipePattern1[i];
-				for (int j = 0; j < row.length(); j++) {
-					char c = row.charAt(j);
-					ItemStack itemStack = ItemStack.EMPTY;
-	
-					// Assign items for Recipe 1
-					switch (c) {
-						case 'R':
-							itemStack = rawGoldBlock;
-							break;
-						case 'N':
-							itemStack = netheriteIngot;
-							break;
-						case 'G':
-							itemStack = netherStar;
-							break;
-					}
-	
-					// Calculate the correct slot for Recipe 1 items
-					int slotIndex = (startRow1 + i) * 9 + (startCol1 + j);
-					inventory.setStack(slotIndex, itemStack);
-				}
-			}
-	
-			// Place Recipe 2 items in the right 3x3 grid
-			for (int i = 0; i < recipePattern2.length; i++) {
-				String row = recipePattern2[i];
-				for (int j = 0; j < row.length(); j++) {
-					char c = row.charAt(j);
-					ItemStack itemStack = ItemStack.EMPTY;
-	
-					// Assign items for Recipe 2
-					switch (c) {
-						case 'B':
-							itemStack = beacon;
-							break;
-						case 'N':
-							itemStack = netheriteIngot;
-							break;
-						case 'G':
-							itemStack = netherStar;
-							break;
-					}
-	
-					// Calculate the correct slot for Recipe 2 items
-					int slotIndex = (startRow2 + i) * 9 + (startCol2 + j);
-					inventory.setStack(slotIndex, itemStack);
-				}
-			}
-	
-			// Place the result of Recipe 1 (Heart) at a separate slot
-			int resultSlot1 = (startRow1 + 1) * 9 + (startCol1 + 3); // Row 2, Column 4
-			inventory.setStack(resultSlot1, heart);
-	
-			// Place the result of Recipe 2 (Super Heart) at a separate slot
-			int resultSlot2 = (startRow2 + 1) * 9 + (startCol2 + 3); // Row 2, Column 8
-			inventory.setStack(resultSlot2, reviveBeacon);
-	
-			// Fill the remaining slots with gray glass panes to indicate empty spaces
-			for (int i = 0; i < inventory.size(); i++) {
-				if (inventory.getStack(i).isEmpty()) {
-					ItemStack glassPane = new ItemStack(Items.GRAY_STAINED_GLASS_PANE); // White to gray (looks nicer)
-					glassPane.set(DataComponentTypes.ITEM_NAME, Text.literal("Empty"));
-					inventory.setStack(i, glassPane);
-				}
-			}
-	
-			// Open the chest GUI for the player
-			serverPlayer.openHandledScreen(new SimpleNamedScreenHandlerFactory(
-					(syncId, playerInventory, playerEntity) -> new RecipeScreenHandler(syncId, playerInventory, inventory),
-					Text.of("View Recipes")
-			));
-		}
-	}
-	
-		
 }
