@@ -18,6 +18,8 @@ import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.minecraft.block.RespawnAnchorBlock;
 import net.minecraft.command.argument.EntityArgumentType;
+import net.minecraft.command.permission.Permission;
+import net.minecraft.command.permission.PermissionLevel;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.NbtComponent;
 import net.minecraft.entity.EntityType;
@@ -35,12 +37,11 @@ import net.minecraft.screen.SimpleNamedScreenHandlerFactory;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Formatting;
-import net.minecraft.util.TypedActionResult;
 import net.minecraft.world.GameMode;
-import net.minecraft.world.GameRules;
 
 public class LifestealMod implements ModInitializer {
 	public static final String MOD_ID = "lifestealmod";
@@ -81,7 +82,7 @@ public class LifestealMod implements ModInitializer {
 					PlayerEntity playerAttacker = (PlayerEntity) attacker;
 
 					// attacker has less than 'maxHeartCap' health
-					if (attacker.getAttributeBaseValue(EntityAttributes.GENERIC_MAX_HEALTH) < config.maxHeartCap) {
+					if (attacker.getAttributeBaseValue(EntityAttributes.MAX_HEALTH) < config.maxHeartCap) {
 						// give one heart to the attacker
 						increasePlayerHealth(playerAttacker);
 						playerAttacker.sendMessage(
@@ -98,13 +99,13 @@ public class LifestealMod implements ModInitializer {
 				}
 
 				// decrease the player's max health
-				double playerMaxHealth = player.getAttributeBaseValue(EntityAttributes.GENERIC_MAX_HEALTH);
-				player.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH).setBaseValue(playerMaxHealth - 2.0);
+				double playerMaxHealth = player.getAttributeBaseValue(EntityAttributes.MAX_HEALTH);
+				player.getAttributeInstance(EntityAttributes.MAX_HEALTH).setBaseValue(playerMaxHealth - 2.0);
 				player.sendMessage(Text.literal("You lost a heart!").formatted(Formatting.RED),
 						true);
 
 				// update the player max health after decreasing it
-				playerMaxHealth = player.getAttributeBaseValue(EntityAttributes.GENERIC_MAX_HEALTH);
+				playerMaxHealth = player.getAttributeBaseValue(EntityAttributes.MAX_HEALTH);
 
 				if (playerMaxHealth <= 1.0) {
 					((ServerPlayerEntity) player).changeGameMode(GameMode.SPECTATOR);
@@ -114,12 +115,11 @@ public class LifestealMod implements ModInitializer {
 							true);
 
 					player.setHealth(1.0f);
+					
+					// Drop inventory because we are cancelling the real death below.
+					player.getInventory().dropAll();
 
-					if (!player.getWorld().getGameRules().getBoolean(GameRules.KEEP_INVENTORY)) {
-						player.getInventory().dropAll();
-					}
-
-					player.getServer().getPlayerManager().broadcast(
+					((ServerPlayerEntity) player).getEntityWorld().getServer().getPlayerManager().broadcast(
 							Text.literal("→ " + player.getDisplayName().getString()
 									+ " has lost all of his hearts and is eliminated!")
 									.formatted(Formatting.RED),
@@ -154,7 +154,7 @@ public class LifestealMod implements ModInitializer {
 		if (config.disableCPVP) {
 			AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
 				if (entity.getType() == EntityType.END_CRYSTAL) {
-					entity.kill();
+					entity.discard();
 					player.sendMessage(
 							Text.literal("Crystals are disabled on this server!").formatted(Formatting.RED), true);
 					return ActionResult.SUCCESS;
@@ -162,7 +162,7 @@ public class LifestealMod implements ModInitializer {
 				return ActionResult.PASS;
 			});
 			UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
-				Boolean playerInNether = world.getDimension().respawnAnchorWorks();
+				Boolean playerInNether = world.getRegistryKey() == world.NETHER;
 				if (playerInNether
 						&& world.getBlockState(hitResult.getBlockPos()).getBlock() instanceof RespawnAnchorBlock) {
 					return ActionResult.PASS;
@@ -181,9 +181,9 @@ public class LifestealMod implements ModInitializer {
 					player.sendMessage(
 							Text.literal("Ender pearls are disabled on this server!").formatted(Formatting.RED),
 							true);
-					return TypedActionResult.fail(player.getStackInHand(hand));
+					return ActionResult.FAIL;
 				}
-				return TypedActionResult.pass(player.getStackInHand(hand));
+				return ActionResult.PASS;
 			});
 		}
 
@@ -255,22 +255,22 @@ public class LifestealMod implements ModInitializer {
 
 		if (config.riptideCooldownEnabled) {
 			UseItemCallback.EVENT.register((player, world, hand) -> {
-				if (world.isClient) {
-					return TypedActionResult.pass(player.getStackInHand(hand));
+				if (world.isClient()) {
+					return ActionResult.PASS;
 				}
 
 				ItemStack itemStack = player.getStackInHand(hand);
 
 				if (itemStack.getItem() == Items.TRIDENT && player.isUsingRiptide()) {
-					if (player.getItemCooldownManager().isCoolingDown(Items.TRIDENT)) {
-						return TypedActionResult.fail(itemStack);
+					if (player.getItemCooldownManager().isCoolingDown(itemStack)) {
+						return ActionResult.FAIL;
 					} else {
-						player.getItemCooldownManager().set(Items.TRIDENT, config.riptideCooldown);
-						return TypedActionResult.success(itemStack);
+						player.getItemCooldownManager().set(itemStack, config.riptideCooldown);
+						return ActionResult.SUCCESS;
 					}
 				}
 
-				return TypedActionResult.pass(itemStack);
+				return ActionResult.PASS;
 			});
 		}
 
@@ -283,15 +283,15 @@ public class LifestealMod implements ModInitializer {
 				if (player instanceof ServerPlayerEntity) {
 					// health cap
 					ModConfig modConfig = AutoConfig.getConfigHolder(ModConfig.class).getConfig();
-					double playerMaxHealth = player.getAttributeBaseValue(EntityAttributes.GENERIC_MAX_HEALTH);
+					double playerMaxHealth = player.getAttributeBaseValue(EntityAttributes.MAX_HEALTH);
 					if (playerMaxHealth >= modConfig.maxHeartCap) {
 						player.sendMessage(
 								Text.literal("You have reached the maximum health limit!").formatted(Formatting.RED),
 								true);
-						return TypedActionResult.fail(itemStack);
+						return ActionResult.FAIL;
 					}
 
-					player.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH)
+					player.getAttributeInstance(EntityAttributes.MAX_HEALTH)
 							.setBaseValue(playerMaxHealth + 2.0);
 
 					player.sendMessage(
@@ -300,11 +300,11 @@ public class LifestealMod implements ModInitializer {
 					// Decrease the item stack size
 					itemStack.decrement(1);
 
-					return TypedActionResult.success(itemStack);
+					return ActionResult.SUCCESS;
 				}
 			}
 
-			return TypedActionResult.pass(itemStack);
+			return ActionResult.PASS;
 
 		});
 
@@ -323,7 +323,7 @@ public class LifestealMod implements ModInitializer {
 					SimpleInventory inventory = new SimpleInventory(27);
 
 					// Fill the inventory with player heads of player who are dead
-					serverPlayer.getServer().getPlayerManager().getPlayerList().forEach(p -> {
+					serverPlayer.getEntityWorld().getServer().getPlayerManager().getPlayerList().forEach(p -> {
 						if (p.getHealth() <= 1.0f) {
 							ItemStack playerHead = new ItemStack(Items.PLAYER_HEAD);
 							// not using nbt because it is not supported in 1.21 using component system
@@ -352,11 +352,11 @@ public class LifestealMod implements ModInitializer {
 									inventory),
 							Text.of("Revive Players")));
 
-					return TypedActionResult.success(itemStack);
+					return ActionResult.SUCCESS;
 				}
 			}
 
-			return TypedActionResult.pass(itemStack);
+			return ActionResult.PASS;
 		});
 
 		UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
@@ -374,14 +374,14 @@ public class LifestealMod implements ModInitializer {
 		ServerLivingEntityEvents.ALLOW_DEATH.register((entity, source, amount) -> {
 			if (entity instanceof PlayerEntity) {
 				PlayerEntity player = (PlayerEntity) entity;
-				double playerMaxHealth = player.getAttributeBaseValue(EntityAttributes.GENERIC_MAX_HEALTH);
+				double playerMaxHealth = player.getAttributeBaseValue(EntityAttributes.MAX_HEALTH);
 				ModConfig modConfig = AutoConfig.getConfigHolder(ModConfig.class).getConfig();
 
 				if (playerMaxHealth > modConfig.maxHeartCap) {
 					player.sendMessage(
 							Text.literal("You have reached the maximum health limit!").formatted(Formatting.RED),
 							true);
-					player.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH)
+					player.getAttributeInstance(EntityAttributes.MAX_HEALTH)
 							.setBaseValue(modConfig.maxHeartCap);
 				}
 			}
@@ -398,8 +398,8 @@ public class LifestealMod implements ModInitializer {
 	}
 
 	private void increasePlayerHealth(PlayerEntity player) {
-		double playerMaxHealth = player.getAttributeBaseValue(EntityAttributes.GENERIC_MAX_HEALTH);
-		player.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH).setBaseValue(playerMaxHealth + 2.0);
+		double playerMaxHealth = player.getAttributeBaseValue(EntityAttributes.MAX_HEALTH);
+		player.getAttributeInstance(EntityAttributes.MAX_HEALTH).setBaseValue(playerMaxHealth + 2.0);
 	}
 
 	private void registerCommands() {
@@ -413,7 +413,7 @@ public class LifestealMod implements ModInitializer {
 										int amount = IntegerArgumentType.getInteger(context, "amount");
 
 										double playerMaxHealth = player
-												.getAttributeBaseValue(EntityAttributes.GENERIC_MAX_HEALTH);
+												.getAttributeBaseValue(EntityAttributes.MAX_HEALTH);
 
 										// if he tries to withdraw allof his health, don't let him
 										if (amount >= playerMaxHealth / 2.0) {
@@ -428,7 +428,7 @@ public class LifestealMod implements ModInitializer {
 											double playerCurrentHealth = player.getHealth();
 
 											// sets the current health too
-											player.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH)
+											player.getAttributeInstance(EntityAttributes.MAX_HEALTH)
 													.setBaseValue(newMaxHealth);
 
 											// restoring current health if it is less than the new max health and if enabled in config
@@ -457,7 +457,7 @@ public class LifestealMod implements ModInitializer {
 										return amount;
 									})))
 						.then(CommandManager.literal("take")
-							.requires(source -> source.hasPermissionLevel(2))
+							.requires(source -> source.getPermissions().hasPermission(new Permission.Level(PermissionLevel.GAMEMASTERS)))
 							.then(CommandManager.argument("targets", EntityArgumentType.players())
 										.then(CommandManager.argument("amount", IntegerArgumentType.integer(0))
 												.executes(context -> {
@@ -467,11 +467,11 @@ public class LifestealMod implements ModInitializer {
 	
 													for (ServerPlayerEntity target : targets) {
 														double currentMaxHealth = target
-																.getAttributeBaseValue(EntityAttributes.GENERIC_MAX_HEALTH);
+																.getAttributeBaseValue(EntityAttributes.MAX_HEALTH);
 														double newMaxHealth = Math.max(2.0,
 																currentMaxHealth - amount * 2.0); // 1 heart = 2.0 health
 	
-														target.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH)
+														target.getAttributeInstance(EntityAttributes.MAX_HEALTH)
 																.setBaseValue(newMaxHealth);
 														target.setHealth((float) newMaxHealth); // Set player's health to
 																								// the new max health
@@ -480,7 +480,7 @@ public class LifestealMod implements ModInitializer {
 													return targets.size();
 												}))))
 						.then(CommandManager.literal("set")
-							.requires(source -> source.hasPermissionLevel(2))
+							.requires(source -> source.getPermissions().hasPermission(new Permission.Level(PermissionLevel.GAMEMASTERS)))
 							.then(CommandManager.argument("targets", EntityArgumentType.players())
 										.then(CommandManager.argument("amount", IntegerArgumentType.integer(0))
 												.executes(context -> {
@@ -490,10 +490,10 @@ public class LifestealMod implements ModInitializer {
 	
 													for (ServerPlayerEntity target : targets) {
 														double currentMaxHealth = target
-																.getAttributeBaseValue(EntityAttributes.GENERIC_MAX_HEALTH);
+																.getAttributeBaseValue(EntityAttributes.MAX_HEALTH);
 														double newMaxHealth = Math.max(2.0, amount * 2.0); // 1 heart = 2.0 health
 	
-														target.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH)
+														target.getAttributeInstance(EntityAttributes.MAX_HEALTH)
 																.setBaseValue(newMaxHealth);
 														target.setHealth((float) newMaxHealth); // Set player's health to
 																								// the new max health
@@ -502,7 +502,7 @@ public class LifestealMod implements ModInitializer {
 													return targets.size();
 												}))))
 					.then(CommandManager.literal("give")
-							.requires(source -> source.hasPermissionLevel(2))
+							.requires(source -> source.getPermissions().hasPermission(new Permission.Level(PermissionLevel.GAMEMASTERS)))
 							.then(CommandManager.argument("targets", EntityArgumentType.players())
 									.then(CommandManager.argument("amount", IntegerArgumentType.integer(0))
 											.executes(context -> {
@@ -512,11 +512,11 @@ public class LifestealMod implements ModInitializer {
 
 												for (ServerPlayerEntity target : targets) {
 													double currentMaxHealth = target
-															.getAttributeBaseValue(EntityAttributes.GENERIC_MAX_HEALTH);
+															.getAttributeBaseValue(EntityAttributes.MAX_HEALTH);
 													double newMaxHealth = Math.max(2.0,
 															currentMaxHealth + amount * 2.0); // 1 heart = 2.0 health
 
-													target.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH)
+													target.getAttributeInstance(EntityAttributes.MAX_HEALTH)
 															.setBaseValue(newMaxHealth);
 													target.setHealth((float) newMaxHealth); // Set player's health to
 																							// the new max health
@@ -552,7 +552,7 @@ public class LifestealMod implements ModInitializer {
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 			dispatcher.register(CommandManager.literal("lifesteal")
 					.then(CommandManager.literal("oprevive")
-							.requires(source -> source.hasPermissionLevel(2)) // Only allow OPs to use this command
+							.requires(source -> source.getPermissions().hasPermission(new Permission.Level(PermissionLevel.GAMEMASTERS))) // Only allow OPs to use this command
 							.then(CommandManager.argument("player", EntityArgumentType.player())
 									.executes(context -> {
 										return executeRevive(context.getSource(),
@@ -570,10 +570,10 @@ public class LifestealMod implements ModInitializer {
 			return 0;
 		}
 
-		double currentMaxHealth = target.getAttributeBaseValue(EntityAttributes.GENERIC_MAX_HEALTH);
+		double currentMaxHealth = target.getAttributeBaseValue(EntityAttributes.MAX_HEALTH);
 		double newMaxHealth = Math.max(2.0, currentMaxHealth + 8.0); // 20 hearts = 40 health
 
-		target.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH).setBaseValue(newMaxHealth);
+		target.getAttributeInstance(EntityAttributes.MAX_HEALTH).setBaseValue(newMaxHealth);
 		target.setHealth((float) newMaxHealth); // Set player's health to the new max health
 
 		// changing the player's gamemode to survival
@@ -594,10 +594,10 @@ public class LifestealMod implements ModInitializer {
 			return 0;
 		}
 
-		double currentMaxHealth = target.getAttributeBaseValue(EntityAttributes.GENERIC_MAX_HEALTH);
+		double currentMaxHealth = target.getAttributeBaseValue(EntityAttributes.MAX_HEALTH);
 		double newMaxHealth = Math.max(2.0, currentMaxHealth + 8.0); // 20 hearts = 40 health
 
-		target.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH).setBaseValue(newMaxHealth);
+		target.getAttributeInstance(EntityAttributes.MAX_HEALTH).setBaseValue(newMaxHealth);
 		target.setHealth((float) newMaxHealth); // Set player's health to the new max health
 
 		// changing the player's gamemode to survival
